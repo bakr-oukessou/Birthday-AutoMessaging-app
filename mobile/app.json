@@ -20,7 +20,8 @@
       "package": "com.yourcompany.birthdayreminder",
       "permissions": [
         "android.permission.DETECT_SCREEN_CAPTURE",
-        "android.permission.FOREGROUND_SERVICE"
+        "android.permission.FOREGROUND_SERVICE",
+        "DETECT_SCREEN_CAPTURE"
       ]
     },
     "plugins": [],
