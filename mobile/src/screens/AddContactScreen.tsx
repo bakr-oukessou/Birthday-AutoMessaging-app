@@ -11,8 +11,7 @@ import {
   Switch,
   Platform,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { format } from 'date-fns';
+import { format, parse } from 'date-fns';
 import { contactService, CreateContactData } from '../services';
 
 interface AddContactScreenProps {
@@ -21,8 +20,7 @@ interface AddContactScreenProps {
 
 export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation }) => {
   const [name, setName] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [customMessage, setCustomMessage] = useState('');
@@ -38,8 +36,20 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation }
       return;
     }
 
+    if (!dateOfBirth) {
+      Alert.alert('Error', 'Please enter a date of birth');
+      return;
+    }
+
     if (!phone && !email) {
       Alert.alert('Error', 'Please enter at least a phone number or email');
+      return;
+    }
+
+    // Validate date format (YYYY-MM-DD)
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateOfBirth)) {
+      Alert.alert('Error', 'Please enter date in YYYY-MM-DD format');
       return;
     }
 
@@ -48,7 +58,7 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation }
     try {
       const contactData: CreateContactData = {
         name: name.trim(),
-        dateOfBirth: dateOfBirth.toISOString(),
+        dateOfBirth: new Date(dateOfBirth).toISOString(),
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
         customMessage: customMessage.trim() || undefined,
@@ -69,13 +79,6 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation }
       Alert.alert('Error', error.message || 'Failed to add contact');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const onDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (selectedDate) {
-      setDateOfBirth(selectedDate);
     }
   };
 
@@ -111,23 +114,13 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation }
 
         <View style={styles.inputContainer}>
           <Text style={styles.label}>Date of Birth *</Text>
-          <TouchableOpacity
-            style={styles.dateButton}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Text style={styles.dateButtonText}>
-              {format(dateOfBirth, 'MMMM d, yyyy')}
-            </Text>
-          </TouchableOpacity>
-          {showDatePicker && (
-            <DateTimePicker
-              value={dateOfBirth}
-              mode="date"
-              display="default"
-              onChange={onDateChange}
-              maximumDate={new Date()}
-            />
-          )}
+          <TextInput
+            style={styles.input}
+            placeholder="YYYY-MM-DD (e.g., 1990-05-15)"
+            placeholderTextColor="#999"
+            value={dateOfBirth}
+            onChangeText={setDateOfBirth}
+          />
         </View>
 
         <View style={styles.inputContainer}>

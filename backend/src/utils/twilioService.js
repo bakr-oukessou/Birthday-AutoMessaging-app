@@ -5,12 +5,19 @@ let twilioClient = null;
 
 // Initialize Twilio client
 const initTwilio = () => {
-  if (config.twilio.accountSid && config.twilio.authToken) {
-    const twilio = require('twilio');
-    twilioClient = twilio(config.twilio.accountSid, config.twilio.authToken);
-    logger.info('Twilio client initialized');
+  // Only initialize if valid Twilio credentials are provided (SID starts with 'AC')
+  if (config.twilio.accountSid && 
+      config.twilio.authToken && 
+      config.twilio.accountSid.startsWith('AC')) {
+    try {
+      const twilio = require('twilio');
+      twilioClient = twilio(config.twilio.accountSid, config.twilio.authToken);
+      logger.info('Twilio client initialized');
+    } catch (error) {
+      logger.warn('Failed to initialize Twilio client:', error.message);
+    }
   } else {
-    logger.warn('Twilio credentials not configured');
+    logger.warn('Twilio credentials not configured (SMS/WhatsApp disabled)');
   }
 };
 
