@@ -21,6 +21,12 @@ export interface Contact {
   nextBirthday: string;
   createdAt: string;
   updatedAt: string;
+  birthdayMessageSent?: boolean;
+  lastBirthdayMessage?: {
+    status: 'pending' | 'sent' | 'delivered' | 'failed';
+    sentAt?: string;
+    channel?: 'sms' | 'whatsapp' | 'email';
+  } | null;
 }
 
 export interface CreateContactData {

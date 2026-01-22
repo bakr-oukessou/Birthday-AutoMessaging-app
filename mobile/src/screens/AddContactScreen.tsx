@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,9 +16,12 @@ import { contactService, CreateContactData } from '../services';
 
 interface AddContactScreenProps {
   navigation: any;
+  route: any;
 }
 
-export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation }) => {
+export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, route }) => {
+  const contactId = route?.params?.contactId as string | undefined;
+  const isEditing = Boolean(contactId);
   const [name, setName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [phone, setPhone] = useState('');
@@ -29,6 +32,43 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation }
   const [sendingChannel, setSendingChannel] = useState<'sms' | 'whatsapp' | 'email' | 'user_default'>('user_default');
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    navigation.setOptions({ title: isEditing ? 'Edit Contact' : 'Add Contact' });
+  }, [isEditing, navigation]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadContact = async () => {
+      if (!contactId) return;
+
+      setIsLoading(true);
+      try {
+        const contact = await contactService.getContact(contactId);
+        if (!isMounted) return;
+
+        setName(contact.name || '');
+        setDateOfBirth(format(new Date(contact.dateOfBirth), 'yyyy-MM-dd'));
+        setPhone(contact.phone || '');
+        setEmail(contact.email || '');
+        setCustomMessage(contact.customMessage || '');
+        setRelationship(contact.relationship || 'friend');
+        setEnableNotification(contact.notificationSettings?.enableNotification ?? true);
+        setSendingChannel(contact.notificationSettings?.sendingChannel || 'user_default');
+        setNotes(contact.notes || '');
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to load contact');
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadContact();
+    return () => {
+      isMounted = false;
+    };
+  }, [contactId]);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -71,12 +111,19 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation }
         },
       };
 
-      await contactService.createContact(contactData);
-      Alert.alert('Success', 'Contact added successfully', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      if (isEditing && contactId) {
+        await contactService.updateContact(contactId, contactData);
+        Alert.alert('Success', 'Contact updated successfully', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      } else {
+        await contactService.createContact(contactData);
+        Alert.alert('Success', 'Contact added successfully', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to add contact');
+      Alert.alert('Error', error.message || (isEditing ? 'Failed to update contact' : 'Failed to add contact'));
     } finally {
       setIsLoading(false);
     }

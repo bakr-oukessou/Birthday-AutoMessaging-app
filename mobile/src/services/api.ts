@@ -1,8 +1,15 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:3000/api';
+const DEFAULT_API_URL = Platform.select({
+  android: 'http://10.0.2.2:3000/api',
+  ios: 'http://localhost:3000/api',
+  default: 'http://localhost:3000/api',
+});
+
+const API_URL = Constants.expoConfig?.extra?.apiUrl || DEFAULT_API_URL;
 
 // Create axios instance
 const api: AxiosInstance = axios.create({

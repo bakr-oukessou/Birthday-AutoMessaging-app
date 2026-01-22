@@ -38,6 +38,11 @@ const updateContactValidation = [
   ...createContactValidation.map((validation) => validation.optional()),
 ];
 
+const sendMessageValidation = [
+  param('id').isMongoId().withMessage('Invalid contact ID'),
+  body('message').trim().notEmpty().isLength({ max: 500 }).withMessage('Message is required'),
+];
+
 const getContactsValidation = [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 }),
@@ -54,6 +59,7 @@ router.get('/upcoming', contactController.getUpcomingBirthdays);
 router.get('/today', contactController.getTodaysBirthdays);
 router.get('/calendar', contactController.getBirthdayCalendar);
 router.get('/:id', param('id').isMongoId(), validate, contactController.getContact);
+router.post('/:id/message', sendMessageValidation, validate, contactController.sendContactMessage);
 router.post('/', createContactValidation, validate, contactController.createContact);
 router.put('/:id', updateContactValidation, validate, contactController.updateContact);
 router.delete('/:id', param('id').isMongoId(), validate, contactController.deleteContact);

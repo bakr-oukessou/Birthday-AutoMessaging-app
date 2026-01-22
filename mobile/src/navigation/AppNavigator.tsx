@@ -10,6 +10,7 @@ import {
   HomeScreen,
   CalendarScreen,
   ContactsScreen,
+  ContactDetailsScreen,
   AddContactScreen,
   SettingsScreen,
 } from '../screens';
@@ -69,6 +70,16 @@ const MainStack = () => (
       component={AddContactScreen}
       options={{
         title: 'Add Contact',
+        headerStyle: { backgroundColor: '#667eea' },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: '600' },
+      }}
+    />
+    <Stack.Screen
+      name="ContactDetails"
+      component={ContactDetailsScreen}
+      options={{
+        title: 'Contact Details',
         headerStyle: { backgroundColor: '#667eea' },
         headerTintColor: '#fff',
         headerTitleStyle: { fontWeight: '600' },

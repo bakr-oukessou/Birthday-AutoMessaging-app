@@ -1,4 +1,7 @@
-const { Contact } = require('../models');
+const moment = require('moment-timezone');
+const { User, Contact, MessageLog } = require('../models');
+const birthdayJobService = require('../jobs/birthdayJob');
+const { sendSMS } = require('../utils/twilioService');
 const logger = require('../utils/logger');
 
 exports.createContact = async (req, res, next) => {
@@ -9,6 +12,25 @@ exports.createContact = async (req, res, next) => {
     };
 
     const contact = await Contact.create(contactData);
+
+    // If contact's birthday is today, send message immediately (if enabled)
+    try {
+      const user = await User.findById(req.userId);
+      const userTimezone = user?.timezone || 'UTC';
+      const today = moment().tz(userTimezone);
+      const dob = moment(contact.dateOfBirth).tz(userTimezone);
+
+      const isBirthdayToday = dob.month() === today.month() && dob.date() === today.date();
+      const canSend =
+        user?.settings?.enableAutoSend &&
+        contact.notificationSettings?.enableNotification;
+
+      if (isBirthdayToday && canSend) {
+        await birthdayJobService.sendBirthdayMessage(user, contact, today.year());
+      }
+    } catch (sendError) {
+      logger.error('Failed to send immediate birthday message:', sendError);
+    }
 
     logger.info(`Contact created: ${contact.name} for user ${req.userId}`);
 
@@ -107,10 +129,69 @@ exports.getContact = async (req, res, next) => {
       });
     }
 
+    const currentYear = new Date().getFullYear();
+    const lastMessageLog = await MessageLog.findOne({
+      contact: contact._id,
+      birthdayYear: currentYear,
+      status: { $in: ['sent', 'delivered'] },
+    })
+      .sort({ sentAt: -1, updatedAt: -1 })
+      .lean();
+
+    const contactData = contact.toObject();
+    contactData.birthdayMessageSent = Boolean(lastMessageLog);
+    contactData.lastBirthdayMessage = lastMessageLog
+      ? {
+          status: lastMessageLog.status,
+          sentAt: lastMessageLog.sentAt,
+          channel: lastMessageLog.channel,
+        }
+      : null;
+
     res.json({
       success: true,
       data: {
-        contact,
+        contact: contactData,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.sendContactMessage = async (req, res, next) => {
+  try {
+    const { message } = req.body;
+
+    const contact = await Contact.findOne({
+      _id: req.params.id,
+      user: req.userId,
+      isActive: true,
+    });
+
+    if (!contact) {
+      return res.status(404).json({
+        success: false,
+        message: 'Contact not found',
+      });
+    }
+
+    if (!contact.phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Contact does not have a phone number',
+      });
+    }
+
+    const result = await sendSMS(contact.phone, message);
+
+    res.json({
+      success: true,
+      message: 'Message sent successfully',
+      data: {
+        to: contact.phone,
+        messageId: result.messageId,
+        status: result.status,
       },
     });
   } catch (error) {
