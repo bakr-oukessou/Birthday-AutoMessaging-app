@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { getNextBirthday, getAge } = require('../utils/dateUtils');
 
 const contactSchema = new mongoose.Schema(
   {
@@ -81,36 +82,15 @@ const contactSchema = new mongoose.Schema(
 contactSchema.index({ user: 1, isActive: 1 });
 contactSchema.index({ dateOfBirth: 1 });
 
-// Virtual for calculating next birthday
+// Virtual for calculating next birthday (date-only, so a birthday today
+// resolves to today instead of rolling over to next year)
 contactSchema.virtual('nextBirthday').get(function () {
-  const today = new Date();
-  const dob = new Date(this.dateOfBirth);
-  
-  let nextBirthday = new Date(
-    today.getFullYear(),
-    dob.getMonth(),
-    dob.getDate()
-  );
-  
-  if (nextBirthday < today) {
-    nextBirthday.setFullYear(today.getFullYear() + 1);
-  }
-  
-  return nextBirthday;
+  return getNextBirthday(this.dateOfBirth);
 });
 
 // Virtual for calculating age
 contactSchema.virtual('age').get(function () {
-  const today = new Date();
-  const dob = new Date(this.dateOfBirth);
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDiff = today.getMonth() - dob.getMonth();
-  
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-    age--;
-  }
-  
-  return age;
+  return getAge(this.dateOfBirth);
 });
 
 // Enable virtuals in JSON

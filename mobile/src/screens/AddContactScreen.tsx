@@ -9,15 +9,41 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
-  Platform,
 } from 'react-native';
-import { format, parse } from 'date-fns';
+import { format } from 'date-fns';
 import { contactService, CreateContactData } from '../services';
+import { colors, spacing, radius, shadows } from '../theme';
 
 interface AddContactScreenProps {
   navigation: any;
   route: any;
 }
+
+// Auto-insert dashes while typing a YYYY-MM-DD date
+const formatDateInput = (raw: string): string => {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+};
+
+const parseDateOfBirth = (value: string): Date | null => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+
+  const [year, month, day] = value.split('-').map(Number);
+  // Build as UTC midnight (how the backend stores birthdays) and verify the
+  // components survived, which catches impossible dates like 2000-02-31
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  if (year < 1900 || date.getTime() > Date.now()) return null;
+  return date;
+};
 
 export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, route }) => {
   const contactId = route?.params?.contactId as string | undefined;
@@ -72,24 +98,18 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Error', 'Please enter a name');
+      Alert.alert('Missing Name', 'Please enter a name');
       return;
     }
 
-    if (!dateOfBirth) {
-      Alert.alert('Error', 'Please enter a date of birth');
+    const parsedDob = parseDateOfBirth(dateOfBirth);
+    if (!parsedDob) {
+      Alert.alert('Invalid Date', 'Please enter a valid past date of birth in YYYY-MM-DD format');
       return;
     }
 
-    if (!phone && !email) {
-      Alert.alert('Error', 'Please enter at least a phone number or email');
-      return;
-    }
-
-    // Validate date format (YYYY-MM-DD)
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(dateOfBirth)) {
-      Alert.alert('Error', 'Please enter date in YYYY-MM-DD format');
+    if (!phone.trim() && !email.trim()) {
+      Alert.alert('Missing Contact Method', 'Please enter at least a phone number or email');
       return;
     }
 
@@ -98,7 +118,7 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
     try {
       const contactData: CreateContactData = {
         name: name.trim(),
-        dateOfBirth: new Date(dateOfBirth).toISOString(),
+        dateOfBirth: parsedDob.toISOString(),
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
         customMessage: customMessage.trim() || undefined,
@@ -113,15 +133,10 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
 
       if (isEditing && contactId) {
         await contactService.updateContact(contactId, contactData);
-        Alert.alert('Success', 'Contact updated successfully', [
-          { text: 'OK', onPress: () => navigation.goBack() },
-        ]);
       } else {
         await contactService.createContact(contactData);
-        Alert.alert('Success', 'Contact added successfully', [
-          { text: 'OK', onPress: () => navigation.goBack() },
-        ]);
       }
+      navigation.goBack();
     } catch (error: any) {
       Alert.alert('Error', error.message || (isEditing ? 'Failed to update contact' : 'Failed to add contact'));
     } finally {
@@ -144,7 +159,11 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Basic Information</Text>
 
@@ -153,7 +172,7 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
           <TextInput
             style={styles.input}
             placeholder="Enter name"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textMuted}
             value={name}
             onChangeText={setName}
           />
@@ -164,9 +183,11 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
           <TextInput
             style={styles.input}
             placeholder="YYYY-MM-DD (e.g., 1990-05-15)"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textMuted}
             value={dateOfBirth}
-            onChangeText={setDateOfBirth}
+            onChangeText={(text) => setDateOfBirth(formatDateInput(text))}
+            keyboardType="number-pad"
+            maxLength={10}
           />
         </View>
 
@@ -175,7 +196,7 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
           <TextInput
             style={styles.input}
             placeholder="+1 234 567 8900"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textMuted}
             value={phone}
             onChangeText={setPhone}
             keyboardType="phone-pad"
@@ -187,11 +208,12 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
           <TextInput
             style={styles.input}
             placeholder="email@example.com"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textMuted}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
             autoCapitalize="none"
+            autoCorrect={false}
           />
         </View>
 
@@ -229,8 +251,8 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
           <Switch
             value={enableNotification}
             onValueChange={setEnableNotification}
-            trackColor={{ false: '#e9ecef', true: '#667eea' }}
-            thumbColor="#fff"
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.card}
           />
         </View>
 
@@ -267,15 +289,16 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
         <TextInput
           style={[styles.input, styles.textArea]}
           placeholder="Write a custom birthday message..."
-          placeholderTextColor="#999"
+          placeholderTextColor={colors.textMuted}
           value={customMessage}
           onChangeText={setCustomMessage}
           multiline
           numberOfLines={4}
           textAlignVertical="top"
+          maxLength={500}
         />
         <Text style={styles.hint}>
-          Use {'{name}'} to include the contact's name
+          Use {'{name}'} for the contact's name and {'{age}'} for the age they're turning
         </Text>
       </View>
 
@@ -284,12 +307,13 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
         <TextInput
           style={[styles.input, styles.textArea]}
           placeholder="Add any notes about this contact..."
-          placeholderTextColor="#999"
+          placeholderTextColor={colors.textMuted}
           value={notes}
           onChangeText={setNotes}
           multiline
           numberOfLines={3}
           textAlignVertical="top"
+          maxLength={1000}
         />
       </View>
 
@@ -297,11 +321,12 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
         style={[styles.saveButton, isLoading && styles.saveButtonDisabled]}
         onPress={handleSave}
         disabled={isLoading}
+        activeOpacity={0.8}
       >
         {isLoading ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.textOnPrimary} />
         ) : (
-          <Text style={styles.saveButtonText}>Save Contact</Text>
+          <Text style={styles.saveButtonText}>{isEditing ? 'Save Changes' : 'Save Contact'}</Text>
         )}
       </TouchableOpacity>
     </ScrollView>
@@ -311,108 +336,94 @@ export const AddContactScreen: React.FC<AddContactScreenProps> = ({ navigation, 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: colors.background,
   },
   content: {
-    padding: 16,
+    padding: spacing.md,
     paddingBottom: 40,
   },
   section: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    ...shadows.card,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 16,
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
   },
   inputContainer: {
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#333',
-    marginBottom: 8,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
   },
   input: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
+    backgroundColor: colors.inputBackground,
+    borderRadius: radius.md,
     padding: 14,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: colors.border,
+    color: colors.textPrimary,
   },
   textArea: {
     minHeight: 100,
     paddingTop: 14,
   },
-  dateButton: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  dateButtonText: {
-    fontSize: 16,
-    color: '#333',
-  },
   chipContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.sm,
   },
   chip: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f8f9fa',
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.inputBackground,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: colors.border,
   },
   chipActive: {
-    backgroundColor: '#667eea',
-    borderColor: '#667eea',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   chipText: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
   chipTextActive: {
-    color: '#fff',
+    color: colors.textOnPrimary,
   },
   switchRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   hint: {
     fontSize: 12,
-    color: '#999',
-    marginTop: 8,
+    color: colors.textMuted,
+    marginTop: spacing.sm,
   },
   saveButton: {
-    backgroundColor: '#667eea',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    padding: spacing.md,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: spacing.sm,
   },
   saveButtonDisabled: {
-    backgroundColor: '#aab4f0',
+    opacity: 0.6,
   },
   saveButtonText: {
-    color: '#fff',
+    color: colors.textOnPrimary,
     fontSize: 16,
     fontWeight: '600',
   },

@@ -1,8 +1,23 @@
 const moment = require('moment-timezone');
 const { User, Contact, MessageLog } = require('../models');
 const birthdayJobService = require('../jobs/birthdayJob');
-const { sendSMS } = require('../utils/twilioService');
+const { sendSMS, sendWhatsApp } = require('../utils/twilioService');
+const { sendEmail } = require('../utils/emailService');
+const {
+  isBirthdayOn,
+  getCelebratedMonthDay,
+  getNextBirthday,
+  getTurningAge,
+  getDaysUntilNextBirthday,
+} = require('../utils/dateUtils');
 const logger = require('../utils/logger');
+
+// "Today" as a plain local Date built from the user's timezone, so that
+// date-only birthday math matches what the user sees on their calendar
+const todayInTimezone = (timezone) => {
+  const now = moment.tz(timezone || 'UTC');
+  return new Date(now.year(), now.month(), now.date());
+};
 
 exports.createContact = async (req, res, next) => {
   try {
@@ -16,11 +31,14 @@ exports.createContact = async (req, res, next) => {
     // If contact's birthday is today, send message immediately (if enabled)
     try {
       const user = await User.findById(req.userId);
-      const userTimezone = user?.timezone || 'UTC';
-      const today = moment().tz(userTimezone);
-      const dob = moment(contact.dateOfBirth).tz(userTimezone);
+      const today = moment.tz(user?.timezone || 'UTC');
 
-      const isBirthdayToday = dob.month() === today.month() && dob.date() === today.date();
+      const isBirthdayToday = isBirthdayOn(
+        contact.dateOfBirth,
+        today.year(),
+        today.month(),
+        today.date()
+      );
       const canSend =
         user?.settings?.enableAutoSend &&
         contact.notificationSettings?.enableNotification;
@@ -77,35 +95,42 @@ exports.getContacts = async (req, res, next) => {
     const sortOptions = {};
     sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
 
-    let contacts = await Contact.find(query)
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(parseInt(limit));
+    let contacts;
+    let total;
 
-    // Filter by upcoming birthdays
     if (upcomingDays) {
+      // Filter by days until next birthday before paginating, otherwise
+      // matching contacts on later pages would be silently dropped
       const days = parseInt(upcomingDays);
-      const today = new Date();
-      
-      contacts = contacts.filter((contact) => {
-        const nextBirthday = contact.nextBirthday;
-        const diffTime = nextBirthday - today;
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays >= 0 && diffDays <= days;
-      });
-    }
+      const today = todayInTimezone(req.user?.timezone);
 
-    const total = await Contact.countDocuments(query);
+      const allContacts = await Contact.find(query).sort(sortOptions);
+      const matching = allContacts.filter((contact) => {
+        const daysUntil = getDaysUntilNextBirthday(contact.dateOfBirth, today);
+        return daysUntil >= 0 && daysUntil <= days;
+      });
+
+      total = matching.length;
+      contacts = matching.slice(skip, skip + limitNum);
+    } else {
+      contacts = await Contact.find(query)
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(limitNum);
+      total = await Contact.countDocuments(query);
+    }
 
     res.json({
       success: true,
       data: {
         contacts,
         pagination: {
-          current: parseInt(page),
-          pages: Math.ceil(total / parseInt(limit)),
+          current: pageNum,
+          pages: Math.ceil(total / limitNum),
           total,
         },
       },
@@ -161,7 +186,7 @@ exports.getContact = async (req, res, next) => {
 
 exports.sendContactMessage = async (req, res, next) => {
   try {
-    const { message } = req.body;
+    const { message, channel } = req.body;
 
     const contact = await Contact.findOne({
       _id: req.params.id,
@@ -176,20 +201,50 @@ exports.sendContactMessage = async (req, res, next) => {
       });
     }
 
-    if (!contact.phone) {
+    // Resolve channel: explicit > contact setting > user preference
+    let resolvedChannel = channel;
+    if (!resolvedChannel) {
+      const contactChannel = contact.notificationSettings?.sendingChannel;
+      resolvedChannel =
+        contactChannel && contactChannel !== 'user_default'
+          ? contactChannel
+          : req.user?.settings?.preferredChannel || 'email';
+    }
+
+    const recipient = resolvedChannel === 'email' ? contact.email : contact.phone;
+    if (!recipient) {
       return res.status(400).json({
         success: false,
-        message: 'Contact does not have a phone number',
+        message: `Contact does not have ${resolvedChannel === 'email' ? 'an email address' : 'a phone number'}`,
       });
     }
 
-    const result = await sendSMS(contact.phone, message);
+    let result;
+    switch (resolvedChannel) {
+      case 'sms':
+        result = await sendSMS(recipient, message);
+        break;
+      case 'whatsapp':
+        result = await sendWhatsApp(recipient, message);
+        break;
+      case 'email':
+        result = await sendEmail(recipient, `A message from ${req.user?.name || 'a friend'}`, message);
+        break;
+      default:
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid channel',
+        });
+    }
+
+    logger.info(`Manual message sent to ${contact.name} via ${resolvedChannel}`);
 
     res.json({
       success: true,
       message: 'Message sent successfully',
       data: {
-        to: contact.phone,
+        to: recipient,
+        channel: resolvedChannel,
         messageId: result.messageId,
         status: result.status,
       },
@@ -284,22 +339,15 @@ exports.getUpcomingBirthdays = async (req, res, next) => {
       isActive: true,
     });
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = todayInTimezone(req.user?.timezone);
 
     const upcomingBirthdays = contacts
-      .map((contact) => {
-        const nextBirthday = contact.nextBirthday;
-        const diffTime = nextBirthday - today;
-        const daysUntil = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        return {
-          contact,
-          daysUntil,
-          nextBirthday,
-          turningAge: contact.age + 1,
-        };
-      })
+      .map((contact) => ({
+        contact,
+        daysUntil: getDaysUntilNextBirthday(contact.dateOfBirth, today),
+        nextBirthday: getNextBirthday(contact.dateOfBirth, today),
+        turningAge: getTurningAge(contact.dateOfBirth, today),
+      }))
       .filter((item) => item.daysUntil >= 0 && item.daysUntil <= daysLimit)
       .sort((a, b) => a.daysUntil - b.daysUntil);
 
@@ -316,19 +364,16 @@ exports.getUpcomingBirthdays = async (req, res, next) => {
 
 exports.getTodaysBirthdays = async (req, res, next) => {
   try {
-    const today = new Date();
-    const month = today.getMonth();
-    const day = today.getDate();
+    const now = moment.tz(req.user?.timezone || 'UTC');
 
     const contacts = await Contact.find({
       user: req.userId,
       isActive: true,
     });
 
-    const todaysBirthdays = contacts.filter((contact) => {
-      const dob = new Date(contact.dateOfBirth);
-      return dob.getMonth() === month && dob.getDate() === day;
-    });
+    const todaysBirthdays = contacts.filter((contact) =>
+      isBirthdayOn(contact.dateOfBirth, now.year(), now.month(), now.date())
+    );
 
     res.json({
       success: true,
@@ -354,9 +399,10 @@ exports.getBirthdayCalendar = async (req, res, next) => {
     });
 
     const calendarData = contacts.reduce((acc, contact) => {
-      const dob = new Date(contact.dateOfBirth);
-      const birthMonth = dob.getMonth();
-      const birthDay = dob.getDate();
+      const { month: birthMonth, day: birthDay } = getCelebratedMonthDay(
+        contact.dateOfBirth,
+        queryYear
+      );
 
       if (queryMonth !== null && birthMonth !== queryMonth) {
         return acc;
@@ -371,7 +417,7 @@ exports.getBirthdayCalendar = async (req, res, next) => {
       acc[dateKey].push({
         id: contact._id,
         name: contact.name,
-        turningAge: queryYear - dob.getFullYear(),
+        turningAge: queryYear - new Date(contact.dateOfBirth).getUTCFullYear(),
       });
 
       return acc;

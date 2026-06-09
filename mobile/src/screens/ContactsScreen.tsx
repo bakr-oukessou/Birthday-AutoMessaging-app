@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,23 +10,44 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { format, parseISO } from 'date-fns';
 import { contactService, Contact } from '../services';
+import { colors, spacing, radius, shadows, avatarColor } from '../theme';
 
 interface ContactsScreenProps {
   navigation: any;
 }
+
+const RELATIONSHIP_LABELS: Record<string, string> = {
+  family: 'Family',
+  friend: 'Friend',
+  colleague: 'Colleague',
+  other: 'Other',
+};
 
 export const ContactsScreen: React.FC<ContactsScreenProps> = ({ navigation }) => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce typing so we don't hit the API on every keystroke
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 300);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchQuery]);
 
   const loadContacts = useCallback(async () => {
     try {
       const params: any = { limit: 100 };
-      if (searchQuery) params.search = searchQuery;
+      if (debouncedQuery) params.search = debouncedQuery;
       if (selectedFilter !== 'all') params.relationship = selectedFilter;
 
       const response = await contactService.getContacts(params);
@@ -37,16 +58,14 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({ navigation }) =>
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [searchQuery, selectedFilter]);
+  }, [debouncedQuery, selectedFilter]);
 
   useEffect(() => {
     loadContacts();
   }, [loadContacts]);
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadContacts();
-    });
+    const unsubscribe = navigation.addListener('focus', loadContacts);
     return unsubscribe;
   }, [navigation, loadContacts]);
 
@@ -67,9 +86,9 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({ navigation }) =>
           onPress: async () => {
             try {
               await contactService.deleteContact(contact._id);
-              setContacts(contacts.filter((c) => c._id !== contact._id));
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete contact');
+              setContacts((prev) => prev.filter((c) => c._id !== contact._id));
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to delete contact');
             }
           },
         },
@@ -77,41 +96,27 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({ navigation }) =>
     );
   };
 
-  const getRelationshipEmoji = (relationship: string) => {
-    switch (relationship) {
-      case 'family':
-        return '👨‍👩‍👧';
-      case 'friend':
-        return '👋';
-      case 'colleague':
-        return '💼';
-      default:
-        return '👤';
-    }
-  };
-
   const renderContactItem = ({ item }: { item: Contact }) => (
     <TouchableOpacity
       style={styles.contactCard}
+      activeOpacity={0.7}
       onPress={() => navigation.navigate('ContactDetails', { contactId: item._id })}
       onLongPress={() => handleDeleteContact(item)}
     >
-      <View style={styles.avatarContainer}>
-        <Text style={styles.avatarText}>
-          {item.name.charAt(0).toUpperCase()}
-        </Text>
+      <View style={[styles.avatar, { backgroundColor: avatarColor(item.name) }]}>
+        <Text style={styles.avatarText}>{item.name.charAt(0).toUpperCase()}</Text>
       </View>
       <View style={styles.contactInfo}>
         <Text style={styles.contactName}>{item.name}</Text>
         <Text style={styles.contactDetails}>
-          {getRelationshipEmoji(item.relationship)} {item.relationship} • Age {item.age}
+          {RELATIONSHIP_LABELS[item.relationship] || 'Other'} · 🎂 {format(parseISO(item.nextBirthday), 'MMM d')}
         </Text>
       </View>
-      <View style={styles.notificationStatus}>
-        <Text style={styles.notificationIcon}>
-          {item.notificationSettings.enableNotification ? '🔔' : '🔕'}
-        </Text>
-      </View>
+      <Ionicons
+        name={item.notificationSettings.enableNotification ? 'notifications' : 'notifications-off-outline'}
+        size={20}
+        color={item.notificationSettings.enableNotification ? colors.primary : colors.textMuted}
+      />
     </TouchableOpacity>
   );
 
@@ -122,29 +127,32 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({ navigation }) =>
     { key: 'colleague', label: 'Colleagues' },
   ];
 
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#667eea" />
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Contacts</Text>
-        <Text style={styles.headerSubtitle}>{contacts.length} contacts</Text>
+        <Text style={styles.headerSubtitle}>
+          {contacts.length} contact{contacts.length === 1 ? '' : 's'}
+        </Text>
       </View>
 
       <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search contacts..."
-          placeholderTextColor="#999"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
+        <View style={styles.searchInputWrapper}>
+          <Ionicons name="search" size={18} color={colors.textMuted} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search contacts..."
+            placeholderTextColor={colors.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <View style={styles.filterContainer}>
@@ -169,28 +177,38 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({ navigation }) =>
         ))}
       </View>
 
-      <FlatList
-        data={contacts}
-        renderItem={renderContactItem}
-        keyExtractor={(item) => item._id}
-        refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
-        }
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyEmoji}>👥</Text>
-            <Text style={styles.emptyText}>No contacts found</Text>
-            <Text style={styles.emptySubtext}>Add your first contact to get started</Text>
-          </View>
-        }
-      />
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={contacts}
+          renderItem={renderContactItem}
+          keyExtractor={(item) => item._id}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          }
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyEmoji}>👥</Text>
+              <Text style={styles.emptyText}>No contacts found</Text>
+              <Text style={styles.emptySubtext}>
+                {debouncedQuery ? 'Try a different search' : 'Add your first contact to get started'}
+              </Text>
+            </View>
+          }
+        />
+      )}
 
       <TouchableOpacity
         style={styles.fab}
+        activeOpacity={0.85}
         onPress={() => navigation.navigate('AddContact')}
       >
-        <Text style={styles.fabText}>+</Text>
+        <Ionicons name="add" size={30} color={colors.textOnPrimary} />
       </TouchableOpacity>
     </View>
   );
@@ -199,103 +217,101 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({ navigation }) =>
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
   },
   header: {
-    backgroundColor: '#667eea',
-    padding: 24,
+    backgroundColor: colors.primary,
+    padding: spacing.lg,
     paddingTop: 60,
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
+    fontWeight: '700',
+    color: colors.textOnPrimary,
+    marginBottom: spacing.xs,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: 'rgba(255, 255, 255, 0.85)',
   },
   searchContainer: {
-    padding: 16,
-    paddingBottom: 8,
+    padding: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  searchInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    ...shadows.card,
+  },
+  searchIcon: {
+    marginRight: spacing.sm,
   },
   searchInput: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
+    flex: 1,
+    paddingVertical: 12,
     fontSize: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    color: colors.textPrimary,
   },
   filterContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
   },
   filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    marginRight: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   filterButtonActive: {
-    backgroundColor: '#667eea',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   filterText: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   filterTextActive: {
-    color: '#fff',
+    color: colors.textOnPrimary,
   },
   listContent: {
-    padding: 16,
-    paddingTop: 8,
-    paddingBottom: 80,
+    padding: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: 96,
   },
   contactCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: spacing.sm + 4,
+    ...shadows.card,
   },
-  avatarContainer: {
+  avatar: {
     width: 48,
     height: 48,
-    borderRadius: 24,
-    backgroundColor: '#667eea',
+    borderRadius: radius.full,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: spacing.md,
   },
   avatarText: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: '700',
+    color: colors.textOnPrimary,
   },
   contactInfo: {
     flex: 1,
@@ -303,56 +319,41 @@ const styles = StyleSheet.create({
   contactName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
+    color: colors.textPrimary,
+    marginBottom: 2,
   },
   contactDetails: {
     fontSize: 14,
-    color: '#666',
-  },
-  notificationStatus: {
-    padding: 8,
-  },
-  notificationIcon: {
-    fontSize: 20,
+    color: colors.textSecondary,
   },
   emptyContainer: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 48,
   },
   emptyEmoji: {
     fontSize: 48,
-    marginBottom: 12,
+    marginBottom: spacing.sm + 4,
   },
   emptyText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
   fab: {
     position: 'absolute',
-    right: 20,
-    bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#667eea',
+    right: spacing.lg,
+    bottom: spacing.lg,
+    width: 58,
+    height: 58,
+    borderRadius: radius.full,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
-  },
-  fabText: {
-    fontSize: 28,
-    color: '#fff',
-    fontWeight: '300',
+    ...shadows.raised,
   },
 });

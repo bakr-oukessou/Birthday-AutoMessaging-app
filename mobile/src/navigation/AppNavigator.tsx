@@ -1,9 +1,11 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context';
+import { colors } from '../theme';
 import {
   LoginScreen,
   RegisterScreen,
@@ -18,6 +20,25 @@ import {
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
+const navTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: colors.primary,
+    background: colors.background,
+    card: colors.card,
+    text: colors.textPrimary,
+    border: colors.border,
+  },
+};
+
+const TAB_ICONS: Record<string, { focused: keyof typeof Ionicons.glyphMap; unfocused: keyof typeof Ionicons.glyphMap }> = {
+  Home: { focused: 'home', unfocused: 'home-outline' },
+  Calendar: { focused: 'calendar', unfocused: 'calendar-outline' },
+  Contacts: { focused: 'people', unfocused: 'people-outline' },
+  Settings: { focused: 'settings', unfocused: 'settings-outline' },
+};
+
 const AuthStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="Login" component={LoginScreen} />
@@ -28,26 +49,23 @@ const AuthStack = () => (
 const TabNavigator = () => (
   <Tab.Navigator
     screenOptions={({ route }) => ({
-      tabBarIcon: ({ focused, color }) => {
-        let emoji = '🏠';
-        if (route.name === 'Home') emoji = '🏠';
-        else if (route.name === 'Calendar') emoji = '📅';
-        else if (route.name === 'Contacts') emoji = '👥';
-        else if (route.name === 'Settings') emoji = '⚙️';
-
-        return <Text style={{ fontSize: focused ? 24 : 20 }}>{emoji}</Text>;
+      tabBarIcon: ({ focused, color, size }) => {
+        const icons = TAB_ICONS[route.name] ?? TAB_ICONS.Home;
+        return <Ionicons name={focused ? icons.focused : icons.unfocused} size={size} color={color} />;
       },
-      tabBarActiveTintColor: '#667eea',
-      tabBarInactiveTintColor: 'gray',
+      tabBarActiveTintColor: colors.primary,
+      tabBarInactiveTintColor: colors.textMuted,
       headerShown: false,
       tabBarStyle: {
         paddingBottom: 8,
         paddingTop: 8,
-        height: 60,
+        height: 64,
+        backgroundColor: colors.card,
+        borderTopColor: colors.border,
       },
       tabBarLabelStyle: {
-        fontSize: 12,
-        fontWeight: '500',
+        fontSize: 11,
+        fontWeight: '600',
       },
     })}
   >
@@ -59,7 +77,14 @@ const TabNavigator = () => (
 );
 
 const MainStack = () => (
-  <Stack.Navigator>
+  <Stack.Navigator
+    screenOptions={{
+      headerStyle: { backgroundColor: colors.primary },
+      headerTintColor: colors.textOnPrimary,
+      headerTitleStyle: { fontWeight: '600' },
+      headerBackTitleVisible: false,
+    }}
+  >
     <Stack.Screen
       name="MainTabs"
       component={TabNavigator}
@@ -68,22 +93,12 @@ const MainStack = () => (
     <Stack.Screen
       name="AddContact"
       component={AddContactScreen}
-      options={{
-        title: 'Add Contact',
-        headerStyle: { backgroundColor: '#667eea' },
-        headerTintColor: '#fff',
-        headerTitleStyle: { fontWeight: '600' },
-      }}
+      options={{ title: 'Add Contact' }}
     />
     <Stack.Screen
       name="ContactDetails"
       component={ContactDetailsScreen}
-      options={{
-        title: 'Contact Details',
-        headerStyle: { backgroundColor: '#667eea' },
-        headerTintColor: '#fff',
-        headerTitleStyle: { fontWeight: '600' },
-      }}
+      options={{ title: 'Contact Details' }}
     />
   </Stack.Navigator>
 );
@@ -93,14 +108,14 @@ export const AppNavigator: React.FC = () => {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#667eea" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navTheme}>
       {isAuthenticated ? <MainStack /> : <AuthStack />}
     </NavigationContainer>
   );

@@ -1,5 +1,15 @@
 require('dotenv').config();
 
+// Fail fast on insecure production configuration
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    throw new Error('JWT_SECRET must be set to a strong value (32+ characters) in production');
+  }
+  if (!process.env.MONGODB_URI) {
+    throw new Error('MONGODB_URI must be set in production');
+  }
+}
+
 module.exports = {
   // Server
   nodeEnv: process.env.NODE_ENV || 'development',

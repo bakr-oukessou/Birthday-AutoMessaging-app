@@ -12,10 +12,12 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Stricter rate limiter for auth endpoints
+// Stricter rate limiter for auth endpoints; successful requests don't count
+// so legitimate users aren't locked out by their own logins
 const authLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 10,
+  skipSuccessfulRequests: true,
   message: {
     success: false,
     message: 'Too many login attempts, please try again after an hour.',

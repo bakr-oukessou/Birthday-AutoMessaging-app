@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ActivityIndicator,
+  ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
 import { format } from 'date-fns';
 import { contactService, CalendarData } from '../services';
+import { colors, spacing, radius, shadows, avatarColor } from '../theme';
 
 interface CalendarScreenProps {
   navigation: any;
@@ -15,79 +18,63 @@ interface CalendarScreenProps {
 
 export const CalendarScreen: React.FC<CalendarScreenProps> = ({ navigation }) => {
   const [calendarData, setCalendarData] = useState<CalendarData>({});
-  const [markedDates, setMarkedDates] = useState<any>({});
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
 
-  useEffect(() => {
-    loadCalendarData();
-  }, [currentMonth]);
-
-  const loadCalendarData = async () => {
+  // Load the whole year at once so swiping months is instant
+  const loadCalendarData = useCallback(async () => {
     try {
-      const year = currentMonth.getFullYear();
-      const month = currentMonth.getMonth();
-      const data = await contactService.getBirthdayCalendar(year, month);
+      const data = await contactService.getBirthdayCalendar(currentYear);
       setCalendarData(data);
-      
-      // Create marked dates for the calendar
-      const marks: any = {};
-      Object.keys(data).forEach((date) => {
-        marks[date] = {
-          marked: true,
-          dotColor: '#667eea',
-          selectedColor: '#667eea',
-        };
-      });
-      setMarkedDates(marks);
     } catch (error) {
       console.error('Failed to load calendar data:', error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentYear]);
+
+  useEffect(() => {
+    loadCalendarData();
+  }, [loadCalendarData]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', loadCalendarData);
+    return unsubscribe;
+  }, [navigation, loadCalendarData]);
+
+  const markedDates = useMemo(() => {
+    const marks: Record<string, any> = {};
+    Object.keys(calendarData).forEach((date) => {
+      marks[date] = { marked: true, dotColor: colors.primary };
+    });
+    if (selectedDate) {
+      marks[selectedDate] = {
+        ...(marks[selectedDate] || {}),
+        selected: true,
+        selectedColor: colors.primary,
+      };
+    }
+    return marks;
+  }, [calendarData, selectedDate]);
 
   const onDayPress = (day: DateData) => {
     setSelectedDate(day.dateString);
-    
-    // Update marked dates to show selection
-    const newMarkedDates = { ...markedDates };
-    Object.keys(newMarkedDates).forEach((date) => {
-      newMarkedDates[date] = {
-        ...newMarkedDates[date],
-        selected: date === day.dateString,
-      };
-    });
-    
-    if (!newMarkedDates[day.dateString]) {
-      newMarkedDates[day.dateString] = { selected: true, selectedColor: '#667eea' };
-    } else {
-      newMarkedDates[day.dateString].selected = true;
-      newMarkedDates[day.dateString].selectedColor = '#667eea';
-    }
-    
-    setMarkedDates(newMarkedDates);
   };
 
   const onMonthChange = (month: DateData) => {
-    setCurrentMonth(new Date(month.year, month.month - 1, 1));
+    if (month.year !== currentYear) {
+      setCurrentYear(month.year);
+    }
     setSelectedDate(null);
   };
 
-  const getBirthdaysForDate = () => {
-    if (!selectedDate || !calendarData[selectedDate]) {
-      return [];
-    }
-    return calendarData[selectedDate];
-  };
-
-  const birthdaysForSelectedDate = getBirthdaysForDate();
+  const birthdaysForSelectedDate = (selectedDate && calendarData[selectedDate]) || [];
 
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#667eea" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -96,27 +83,25 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ navigation }) =>
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Birthday Calendar</Text>
-        <Text style={styles.headerSubtitle}>
-          Tap a date to see birthdays
-        </Text>
+        <Text style={styles.headerSubtitle}>Tap a date to see birthdays</Text>
       </View>
 
       <Calendar
         style={styles.calendar}
         theme={{
-          backgroundColor: '#ffffff',
-          calendarBackground: '#ffffff',
-          textSectionTitleColor: '#667eea',
-          selectedDayBackgroundColor: '#667eea',
-          selectedDayTextColor: '#ffffff',
-          todayTextColor: '#667eea',
-          dayTextColor: '#2d4150',
-          textDisabledColor: '#d9e1e8',
-          dotColor: '#667eea',
-          selectedDotColor: '#ffffff',
-          arrowColor: '#667eea',
-          monthTextColor: '#333',
-          indicatorColor: '#667eea',
+          backgroundColor: colors.card,
+          calendarBackground: colors.card,
+          textSectionTitleColor: colors.primary,
+          selectedDayBackgroundColor: colors.primary,
+          selectedDayTextColor: colors.textOnPrimary,
+          todayTextColor: colors.primary,
+          dayTextColor: colors.textPrimary,
+          textDisabledColor: colors.border,
+          dotColor: colors.primary,
+          selectedDotColor: colors.textOnPrimary,
+          arrowColor: colors.primary,
+          monthTextColor: colors.textPrimary,
+          indicatorColor: colors.primary,
           textDayFontWeight: '400',
           textMonthFontWeight: 'bold',
           textDayHeaderFontWeight: '600',
@@ -130,28 +115,29 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ navigation }) =>
         enableSwipeMonths={true}
       />
 
-      <View style={styles.birthdayList}>
+      <ScrollView style={styles.birthdayList} contentContainerStyle={styles.birthdayListContent}>
         {selectedDate ? (
           <>
             <Text style={styles.selectedDateTitle}>
-              {format(new Date(selectedDate), 'MMMM d, yyyy')}
+              {format(new Date(`${selectedDate}T00:00:00`), 'MMMM d, yyyy')}
             </Text>
             {birthdaysForSelectedDate.length > 0 ? (
               birthdaysForSelectedDate.map((birthday) => (
-                <View key={birthday.id} style={styles.birthdayCard}>
-                  <View style={styles.avatarContainer}>
-                    <Text style={styles.avatarText}>
-                      {birthday.name.charAt(0).toUpperCase()}
-                    </Text>
+                <TouchableOpacity
+                  key={birthday.id}
+                  style={styles.birthdayCard}
+                  activeOpacity={0.7}
+                  onPress={() => navigation.navigate('ContactDetails', { contactId: birthday.id })}
+                >
+                  <View style={[styles.avatar, { backgroundColor: avatarColor(birthday.name) }]}>
+                    <Text style={styles.avatarText}>{birthday.name.charAt(0).toUpperCase()}</Text>
                   </View>
                   <View style={styles.birthdayInfo}>
                     <Text style={styles.birthdayName}>{birthday.name}</Text>
-                    <Text style={styles.birthdayAge}>
-                      Turning {birthday.turningAge}
-                    </Text>
+                    <Text style={styles.birthdayAge}>Turning {birthday.turningAge}</Text>
                   </View>
                   <Text style={styles.birthdayEmoji}>🎂</Text>
-                </View>
+                </TouchableOpacity>
               ))
             ) : (
               <View style={styles.noBirthdays}>
@@ -165,7 +151,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ navigation }) =>
             <Text style={styles.noBirthdaysText}>Select a date to see birthdays</Text>
           </View>
         )}
-      </View>
+      </ScrollView>
     </View>
   );
 };
@@ -173,74 +159,69 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({ navigation }) =>
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: colors.background,
   },
   header: {
-    backgroundColor: '#667eea',
-    padding: 24,
+    backgroundColor: colors.primary,
+    padding: spacing.lg,
     paddingTop: 60,
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
+    fontWeight: '700',
+    color: colors.textOnPrimary,
+    marginBottom: spacing.xs,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: 'rgba(255, 255, 255, 0.85)',
   },
   calendar: {
-    borderRadius: 16,
-    margin: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: radius.lg,
+    margin: spacing.md,
+    overflow: 'hidden',
+    ...shadows.card,
   },
   birthdayList: {
     flex: 1,
-    padding: 16,
+  },
+  birthdayListContent: {
+    padding: spacing.md,
+    paddingTop: 0,
   },
   selectedDateTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm + 4,
   },
   birthdayCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: spacing.sm,
+    ...shadows.card,
   },
-  avatarContainer: {
+  avatar: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: '#667eea',
+    borderRadius: radius.full,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: spacing.md,
   },
   avatarText: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: '700',
+    color: colors.textOnPrimary,
   },
   birthdayInfo: {
     flex: 1,
@@ -248,11 +229,11 @@ const styles = StyleSheet.create({
   birthdayName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
   },
   birthdayAge: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   birthdayEmoji: {
@@ -264,10 +245,10 @@ const styles = StyleSheet.create({
   },
   noBirthdaysEmoji: {
     fontSize: 40,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   noBirthdaysText: {
     fontSize: 16,
-    color: '#666',
+    color: colors.textSecondary,
   },
 });
