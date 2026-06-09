@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const mongoose = require('mongoose');
 const connectDB = require('./config/database');
 const routes = require('./routes');
 const { errorHandler, apiLimiter } = require('./middleware');
@@ -13,6 +14,10 @@ const logger = require('./utils/logger');
 
 // Initialize Express app
 const app = express();
+
+// Trust the first proxy hop (load balancer / reverse proxy) so rate limiting
+// and logging see the real client IP
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet());
@@ -80,11 +85,17 @@ const startServer = async () => {
     // Graceful shutdown
     const gracefulShutdown = (signal) => {
       logger.info(`${signal} received. Starting graceful shutdown...`);
-      
+
       birthdayJob.stop();
-      
-      server.close(() => {
+
+      server.close(async () => {
         logger.info('HTTP server closed');
+        try {
+          await mongoose.connection.close();
+          logger.info('MongoDB connection closed');
+        } catch (err) {
+          logger.error('Error closing MongoDB connection:', err);
+        }
         process.exit(0);
       });
 
@@ -92,7 +103,7 @@ const startServer = async () => {
       setTimeout(() => {
         logger.error('Could not close connections in time, forcefully shutting down');
         process.exit(1);
-      }, 30000);
+      }, 30000).unref();
     };
 
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
@@ -104,6 +115,13 @@ const startServer = async () => {
   }
 };
 
-startServer();
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection:', reason);
+});
+
+// Only start when run directly so tests can import the app
+if (require.main === module) {
+  startServer();
+}
 
 module.exports = app;

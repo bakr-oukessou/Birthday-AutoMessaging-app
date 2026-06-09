@@ -11,11 +11,15 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context';
+import { colors, spacing, radius, shadows } from '../theme';
 
 interface RegisterScreenProps {
   navigation: any;
 }
+
+const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   const { register } = useAuth();
@@ -23,21 +27,27 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleRegister = async () => {
-    if (!name || !email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
+      Alert.alert('Missing Information', 'Please fill in all fields');
       return;
     }
 
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+    if (!EMAIL_REGEX.test(email.trim())) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      Alert.alert('Weak Password', 'Password must be at least 6 characters');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert('Password Mismatch', 'Passwords do not match');
       return;
     }
 
@@ -45,7 +55,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
     try {
       await register(name, email, password);
     } catch (error: any) {
-      console.error('Registration error:', error);
       Alert.alert('Registration Failed', error.message || 'Please try again');
     } finally {
       setIsLoading(false);
@@ -57,7 +66,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Text style={styles.emoji}>🎉</Text>
           <Text style={styles.title}>Create Account</Text>
@@ -70,10 +79,11 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
             <TextInput
               style={styles.input}
               placeholder="Enter your name"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textMuted}
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
+              autoComplete="name"
             />
           </View>
 
@@ -82,25 +92,35 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
             <TextInput
               style={styles.input}
               placeholder="Enter your email"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textMuted}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              autoComplete="email"
             />
           </View>
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Create a password"
-              placeholderTextColor="#999"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
+            <View style={styles.passwordWrapper}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="At least 6 characters"
+                placeholderTextColor={colors.textMuted}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeButton}>
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={colors.textMuted}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.inputContainer}>
@@ -108,10 +128,10 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
             <TextInput
               style={styles.input}
               placeholder="Confirm your password"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textMuted}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
             />
           </View>
 
@@ -119,9 +139,10 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
             style={[styles.button, isLoading && styles.buttonDisabled]}
             onPress={handleRegister}
             disabled={isLoading}
+            activeOpacity={0.8}
           >
             {isLoading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text style={styles.buttonText}>Sign Up</Text>
             )}
@@ -144,83 +165,97 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    padding: 20,
+    padding: spacing.lg,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: spacing.xl,
   },
   emoji: {
     fontSize: 50,
-    marginBottom: 10,
+    marginBottom: spacing.sm + 2,
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: colors.textSecondary,
   },
   form: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    ...shadows.card,
   },
   inputContainer: {
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
   },
   input: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.inputBackground,
+    borderRadius: radius.md,
+    padding: spacing.md,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: colors.border,
+    color: colors.textPrimary,
+  },
+  passwordWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.inputBackground,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: spacing.md,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  eyeButton: {
+    padding: spacing.md,
   },
   button: {
-    backgroundColor: '#667eea',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    padding: spacing.md,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: spacing.sm + 2,
   },
   buttonDisabled: {
-    backgroundColor: '#aab4f0',
+    opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: colors.textOnPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
   linkButton: {
-    marginTop: 20,
+    marginTop: spacing.md + 4,
     alignItems: 'center',
   },
   linkText: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
   linkTextBold: {
-    color: '#667eea',
+    color: colors.primary,
     fontWeight: '600',
   },
 });

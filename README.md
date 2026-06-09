@@ -135,9 +135,25 @@ The API will be available at `http://localhost:3000`
 | POST | `/api/contacts` | Create contact |
 | PUT | `/api/contacts/:id` | Update contact |
 | DELETE | `/api/contacts/:id` | Delete contact |
+| POST | `/api/contacts/:id/message` | Send a message now (SMS/WhatsApp/Email) |
 | GET | `/api/contacts/upcoming` | Get upcoming birthdays |
 | GET | `/api/contacts/today` | Get today's birthdays |
 | GET | `/api/contacts/calendar` | Get calendar data |
+
+### Misc
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Health check (includes DB status) |
+| GET | `/api/templates` | Built-in message templates |
+
+## 🧪 Testing
+
+Backend unit tests (date/birthday logic) run with Jest:
+
+```bash
+cd backend
+npm test
+```
 
 ## 🗄️ Database Schema
 
@@ -225,9 +241,11 @@ BIRTHDAY_CHECK_CRON=0 8 * * *
 
 ## 🌍 Timezone Handling
 
-- Users set their timezone in settings
-- Birthday checks use user's local timezone
-- Contacts' birthdays are compared against user's current date
+- Users set their timezone in settings (Settings → Account → Timezone)
+- Birthday checks use the user's local timezone
+- Dates of birth are stored as UTC midnight and always read with UTC getters,
+  so birthdays never shift a day depending on the server's timezone
+- Feb 29 birthdays are celebrated on Feb 28 in non-leap years
 - Moment-timezone for reliable timezone conversions
 
 ## 📝 Message Templates

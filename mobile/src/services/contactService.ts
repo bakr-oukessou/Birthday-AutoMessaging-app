@@ -114,6 +114,23 @@ class ContactService {
     throw new Error(response.data.message || 'Failed to update contact');
   }
 
+  async sendMessage(
+    id: string,
+    message: string,
+    channel?: 'sms' | 'whatsapp' | 'email'
+  ): Promise<{ to: string; channel: string }> {
+    const response = await api.post<ApiResponse<{ to: string; channel: string }>>(
+      `/contacts/${id}/message`,
+      channel ? { message, channel } : { message }
+    );
+
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+
+    throw new Error(response.data.message || 'Failed to send message');
+  }
+
   async deleteContact(id: string): Promise<void> {
     const response = await api.delete<ApiResponse>(`/contacts/${id}`);
     

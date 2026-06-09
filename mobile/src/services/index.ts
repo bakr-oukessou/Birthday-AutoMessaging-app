@@ -1,6 +1,7 @@
-export { default as api } from './api';
+export { default as api, setOnUnauthorized, ApiError } from './api';
 export { authService } from './authService';
 export { contactService } from './contactService';
-// export { notificationService } from './notificationService'; // Disabled due to permission issues
+export { templateService } from './templateService';
 export type { User, LoginCredentials, RegisterData, AuthResponse } from './authService';
 export type { Contact, CreateContactData, ContactsResponse, UpcomingBirthday, CalendarData } from './contactService';
+export type { MessageTemplate } from './templateService';

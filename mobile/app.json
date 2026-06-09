@@ -7,7 +7,7 @@
     "userInterfaceStyle": "automatic",
     "splash": {
       "resizeMode": "contain",
-      "backgroundColor": "#667eea"
+      "backgroundColor": "#6366f1"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -18,14 +18,11 @@
     },
     "android": {
       "package": "com.yourcompany.birthdayreminder",
-      "permissions": [
-        "android.permission.DETECT_SCREEN_CAPTURE",
-        "android.permission.FOREGROUND_SERVICE",
-        "DETECT_SCREEN_CAPTURE"
-      ]
+      "permissions": []
     },
     "plugins": [],
     "extra": {
+      "apiUrl": "",
       "eas": {
         "projectId": "your-project-id"
       }

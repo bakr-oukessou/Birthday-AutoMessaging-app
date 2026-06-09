@@ -41,6 +41,10 @@ const updateContactValidation = [
 const sendMessageValidation = [
   param('id').isMongoId().withMessage('Invalid contact ID'),
   body('message').trim().notEmpty().isLength({ max: 500 }).withMessage('Message is required'),
+  body('channel')
+    .optional()
+    .isIn(['sms', 'whatsapp', 'email'])
+    .withMessage('Invalid channel'),
 ];
 
 const getContactsValidation = [
